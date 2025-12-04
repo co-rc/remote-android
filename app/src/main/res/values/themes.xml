@@ -1,0 +1,12 @@
+<resources>
+
+    <style name="Theme.Corc" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Use default system bar styling so the status bar is visible like a normal app -->
+
+        <!-- Fallback color scheme (used when Dynamic Color is not available) -->
+        <item name="colorPrimary">@color/corc_primary</item>
+        <item name="colorOnPrimary">@color/corc_on_primary</item>
+        <item name="colorPrimaryContainer">@color/corc_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/corc_on_primary_container</item>
+    </style>
+</resources>

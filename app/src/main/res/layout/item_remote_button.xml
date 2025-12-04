@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.button.MaterialButton xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/btnRemote"
+    android:layout_width="72dp"
+    android:layout_height="72dp"
+    android:layout_margin="8dp"
+    android:textAllCaps="false"
+    android:textSize="14sp"
+    app:cornerRadius="36dp" />

@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">CORC</string>
+    <string name="bluetooth_permissions_required_title">Bluetooth permissions required</string>
+    <string name="bluetooth_permissions_required_message">This application requires Bluetooth to work correctly. The app will now close.</string>
+    <string name="bluetooth_required_title">Bluetooth interface required</string>
+    <string name="bluetooth_required_message">This application requires Bluetooth to work correctly. The app will now close.</string>
+    <string name="bluetooth_enabled_message">Bluetooth enabled.</string>
+    <string name="bluetooth_disabled_message">Bluetooth disabled.</string>
+    <string name="scan_in_progress_subtitle">Scan in progress…</string>
+    <string name="scan_failed_subtitle">BLE scan failed</string>
+    <string name="scan_failed_toast">reason: %s</string>
+    <string name="ble_error_subtitle">BLE Error</string>
+    <string name="ble_error_toast">reason: %s</string>
+    <string name="scan_end_subtitle"></string>
+</resources>

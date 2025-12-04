@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    
+    <!-- App fallback color palette (used when dynamic colors are not available) -->
+    <color name="corc_primary">#00BCD4</color>
+    <color name="corc_on_primary">#FF000000</color>
+    <!-- Optional containers for future use -->
+    <color name="corc_primary_container">#B2EBF2</color>
+    <color name="corc_on_primary_container">#001F24</color>
+
+    <!-- Launcher background alias (used by adaptive icon) -->
+    <color name="ic_launcher_background">@color/corc_primary</color>
+</resources>
