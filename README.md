@@ -122,7 +122,7 @@ Refer to the firmware repository for setup instructions.
 
 ## Project Structure
 ```
-BlasterApk/
+/
 ├── app/
 │   ├── src/
 │   │   ├── main/
@@ -142,41 +142,6 @@ BlasterApk/
 └── README.md
 ```
 
-## Troubleshooting
-
-### App cannot find the device
-- Ensure Bluetooth is enabled on your Android device
-- Grant Bluetooth permissions (Nearby devices) when prompted
-- Verify the CORC firmware/device is running and advertising
-- Try restarting both the Android app and the Pico W device
-- Check that the device name in firmware is "CORC" (default)
-
-### Connection fails or times out
-- Ensure the Pico W is powered and running the firmware
-- Try clearing the configuration and rescanning
-- Check that no other app is connected to the device
-- Verify the firmware UUIDs match those expected by the app
-
-### Commands don't work
-- Check the log view for BLE write status
-- Verify the device is connected (status shows "Connected")
-- Ensure the firmware is properly handling received commands
-- Check that the command format matches what the firmware expects
-- ### Permissions denied
-Go to Android Settings → Apps → CORC Remote → Permissions
-- Manually grant Nearby devices (Bluetooth) permissions
-- Restart the app
-
-### App crashes on older Android versions
-- The app requires Android 16 (API 36)
-- Check the minimum SDK version in build.gradle.kts
-
-## Development Notes
-- Language: English only in code
-- Style Guide: Google Java Style Guide
-- Principles: SOLID
-- BLE Library: Android Bluetooth Low Energy API
-
 ## Future Enhancements
 - In-app button configuration UI
 - Support for TX characteristic (receiving data from device)
@@ -191,19 +156,4 @@ Go to Android Settings → Apps → CORC Remote → Permissions
 - CORC firmware for Raspberry Pi Pico W (see respective repository)
 
 ## License
-This project is released under the MIT License. See LICENSE for details.
-
-## Contributing
-Contributions are welcome! Please follow the existing code style and guidelines:
-- Use English in all code
-- Follow Google Java Style Guide
-- Apply SOLID principles
-- Avoid code duplication
-- Write meaningful commit messages
-
-## Support
-For issues and questions:
-- Check the Troubleshooting section
-- Review the firmware documentation
-- Check BLE connection logs in the app
-- Verify permissions are granted
+This project is released under the Apache License 2.0. See LICENSE for details.
