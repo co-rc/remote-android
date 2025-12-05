@@ -5,6 +5,7 @@ import androidx.annotation.Nullable;
 import androidx.room.ColumnInfo;
 import androidx.room.Entity;
 import androidx.room.PrimaryKey;
+import androidx.room.Ignore;
 import androidx.room.TypeConverters;
 import org.jbanaszczyk.corc.ble.BleDeviceAddress;
 import org.jbanaszczyk.corc.ble.BleTypeConverters;
@@ -46,6 +47,7 @@ public class BleDevicePersistent {
         this.configuration = normalizeConfiguration(configuration);
     }
 
+    @Ignore
     public BleDevicePersistent(@Nullable BleDeviceAddress address) {
         this(address, null, null);
     }

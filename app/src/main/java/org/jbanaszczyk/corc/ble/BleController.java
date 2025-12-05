@@ -23,7 +23,7 @@ public class BleController {
     private final Context appContext;
     private final BleConnectionListener listener;
     private final Handler connectionHandler = new Handler(Looper.getMainLooper());
-    private final BleDeviceRegistry registry = new BleDeviceRegistry();
+    private final BleDeviceRegistry registry;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
 
@@ -109,6 +109,7 @@ public class BleController {
     public BleController(@NonNull Context context, @NonNull BleConnectionListener listener) {
         this.appContext = context.getApplicationContext();
         this.listener = listener;
+        this.registry = new BleDeviceRegistry(this.appContext);
     }
 
     public void initialize() {
@@ -198,10 +199,7 @@ public class BleController {
             Log.e(LOG_TAG, "startScan() failed", e);
             return false;
         }
-    }    private final Runnable scanTimeoutRunnable = () -> {
-        Log.d(LOG_TAG, "Scan timeout reached → stopScan()");
-        stopScan();
-    };
+    }
 
     @SuppressLint("MissingPermission")
     public void stopScan() {
@@ -227,7 +225,10 @@ public class BleController {
         } catch (Exception e) {
             Log.e(LOG_TAG, "stopScan() failed", e);
         }
-    }
+    }    private final Runnable scanTimeoutRunnable = () -> {
+        Log.d(LOG_TAG, "Scan timeout reached → stopScan()");
+        stopScan();
+    };
 
     @SuppressLint("MissingPermission")
     public void disconnectAllDevices() {
