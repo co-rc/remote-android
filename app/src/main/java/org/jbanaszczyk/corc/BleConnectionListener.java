@@ -1,16 +1,14 @@
 package org.jbanaszczyk.corc;
 
-import android.bluetooth.BluetoothGatt;
 import androidx.annotation.NonNull;
 import org.jbanaszczyk.corc.ble.BleDevice;
-
-import java.util.Map;
+import org.jbanaszczyk.corc.ble.internal.BleDevicePersistent;
 
 public interface BleConnectionListener {
 
     void onScanStarted();
 
-    void onScanEnd(Map<String, BluetoothGatt> activeConnections);
+    void onScanEnd(int activeConnectionsCount);
 
     void onScanFailed(String message);
 

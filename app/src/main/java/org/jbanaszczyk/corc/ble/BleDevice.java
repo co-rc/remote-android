@@ -1,64 +1,65 @@
 package org.jbanaszczyk.corc.ble;
 
-import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothGatt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.room.ColumnInfo;
-import androidx.room.Entity;
-import androidx.room.Ignore;
-import androidx.room.PrimaryKey;
+import org.jbanaszczyk.corc.ble.internal.BleDevicePersistent;
+import org.jbanaszczyk.corc.ble.internal.BleDeviceRuntime;
 
-import java.util.Objects;
+import java.util.List;
+import java.util.UUID;
 
-@Entity(tableName = "ble_devices")
 public class BleDevice {
-
-    public static final String EMPTY_ADDRESS = "FF:FF:FF:FF:FF:FF";
-
-    @PrimaryKey
     @NonNull
-    @ColumnInfo(name = "address")
-    private String address = EMPTY_ADDRESS;
+    private final BleDevicePersistent persistent;
+    @NonNull
+    private final BleDeviceRuntime runtime;
 
-    public BleDevice() {
+    public BleDevice(@NonNull BleDevicePersistent persistent, @NonNull BleDeviceRuntime runtime) {
+        this.persistent = persistent;
+        this.runtime = runtime;
     }
 
-    @Ignore
-    public BleDevice(@Nullable String address) {
-        this.address = normalizeAddress(address);
+    public BleDevice(@NonNull BleDevicePersistent persistent) {
+        this(persistent, new BleDeviceRuntime());
     }
 
     @NonNull
-    public static String normalizeAddress(@Nullable String address) {
-        //noinspection DataFlowIssue
-        return BluetoothAdapter.checkBluetoothAddress(address)
-                ? address
-                : EMPTY_ADDRESS;
-    }
-
-    public static boolean isEmpty(@Nullable String address) {
-        return EMPTY_ADDRESS.equals(normalizeAddress(address));
-    }
-
-    public boolean isEmpty() {
-        return isEmpty(address);
+    public BleDeviceAddress getAddress() {
+        return persistent.getAddress();
     }
 
     @NonNull
-    @Override
-    public String toString() {
-        return "BleDevice{address='" + address + "'}";
+    public String getConfiguration() {
+        return persistent.getConfiguration();
     }
 
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof BleDevice bleDevice)) return false;
-        return address.equals(bleDevice.address);
+    public BleDevice setConfiguration(@Nullable String configuration) {
+        persistent.setConfiguration(configuration);
+        return this;
     }
 
-    @Override
-    public int hashCode() {
-        return Objects.hash(address);
+    @NonNull
+    public List<UUID> getServices() {
+        return persistent.getServices();
+    }
+
+    public BleDevice setServices(@Nullable List<UUID> services) {
+        persistent.setServices(services);
+        return this;
+    }
+
+    public boolean isConnected() {
+        return runtime.isConnected();
+    }
+
+    @Nullable
+    public BluetoothGatt getBluetoothGatt() {
+        return runtime.getBluetoothGatt();
+    }
+
+    public BleDevice setBluetoothGatt(@Nullable BluetoothGatt bluetoothGatt) {
+        runtime.setBluetoothGatt(bluetoothGatt);
+        return this;
     }
 }

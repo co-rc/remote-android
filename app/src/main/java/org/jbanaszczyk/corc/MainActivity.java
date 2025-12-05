@@ -3,7 +3,6 @@ package org.jbanaszczyk.corc;
 import android.Manifest;
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -22,9 +21,9 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import org.jbanaszczyk.corc.ble.BleController;
 import org.jbanaszczyk.corc.ble.BleDevice;
+import org.jbanaszczyk.corc.ble.internal.BleDevicePersistent;
 
 import java.util.List;
-import java.util.Map;
 
 public class MainActivity extends AppCompatActivity implements BleConnectionListener {
 
@@ -282,9 +281,9 @@ public class MainActivity extends AppCompatActivity implements BleConnectionList
     }
 
     @Override
-    public void onScanEnd(Map<String, BluetoothGatt> activeConnections) {
+    public void onScanEnd(int activeConnectionsCount) {
 
-        Log.d(LOG_TAG, "onScanEnd() " + activeConnections.size());
+        Log.d(LOG_TAG, "onScanEnd() " + activeConnectionsCount);
 
         runOnUiThread(() -> {
             var actionBar = getSupportActionBar();

@@ -11,8 +11,8 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import org.jbanaszczyk.corc.BleConnectionListener;
 
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.List;
+import java.util.UUID;
 
 public class BleController {
 
@@ -23,36 +23,47 @@ public class BleController {
     private final Context appContext;
     private final BleConnectionListener listener;
     private final Handler connectionHandler = new Handler(Looper.getMainLooper());
-    private final Map<String, BluetoothGatt> activeConnections = new ConcurrentHashMap<>();
-    private final Set<String> connectingAddresses = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private final BleDeviceRegistry registry = new BleDeviceRegistry();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private boolean scanning = false;
-    private final Runnable scanTimeoutRunnable = () -> {
-        Log.d(LOG_TAG, "Scan timeout reached → stopScan()");
-        stopScan();
-    };
     private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
 
         @SuppressLint("MissingPermission")
         @Override
         public void onConnectionStateChange(@NonNull BluetoothGatt gatt, int status, int newState) {
-            var address = getAddressFromDevice(gatt);
+            var address = BleDeviceAddress.getAddressFromDevice(gatt);
             Log.d(LOG_TAG, "onConnectionStateChange(): address=" + address + ", status=" + status + ", newState=" + newState);
 
-            connectingAddresses.remove(address);
-            var bleDevice = new BleDevice(address);
+            registry.unmarkConnecting(address);
 
             switch (newState) {
                 case BluetoothProfile.STATE_CONNECTED -> {
-                    activeConnections.put(address, gatt);
-                    listener.onConnectionStateChanged(bleDevice, true);
+                    if (address.isEmpty()) {
+                        Log.w(LOG_TAG, "STATE_CONNECTED with invalid address – ignoring: " + address);
+                        try {
+                            gatt.close();
+                        } catch (Exception ignored) {
+                        }
+                        return;
+                    }
+                    var device = registry
+                            .ensure(address)
+                            .setBluetoothGatt(gatt);
+
+                    listener.onConnectionStateChanged(device, true);
+
                     var started = gatt.discoverServices();
                     Log.d(LOG_TAG, "discoverServices() started=" + started);
                 }
                 case BluetoothProfile.STATE_DISCONNECTED -> {
-                    activeConnections.remove(address);
-                    gatt.close();
-                    listener.onConnectionStateChanged(bleDevice, false);
+                    var device = registry
+                            .ensure(address)
+                            .setBluetoothGatt(null);
+                    try {
+                        gatt.close();
+                    } catch (Exception e) {
+                        Log.e(LOG_TAG, "Error closing GATT for " + address, e);
+                    }
+                    listener.onConnectionStateChanged(device, false);
                 }
                 case BluetoothProfile.STATE_DISCONNECTING ->
                         Log.d(LOG_TAG, "onConnectionStateChange(): STATE_DISCONNECTING");
@@ -62,11 +73,16 @@ public class BleController {
 
         @Override
         public void onServicesDiscovered(@NonNull BluetoothGatt gatt, int status) {
-            var address = getAddressFromDevice(gatt);
+            var address = BleDeviceAddress.getAddressFromDevice(gatt);
 
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 Log.e(LOG_TAG, "onServicesDiscovered(): GATT error " + status + " for " + address);
                 listener.onScanError("Service discovery failed for " + address + " (status " + status + ")");
+                return;
+            }
+
+            if (address.isEmpty()) {
+                Log.w(LOG_TAG, "onServicesDiscovered(): invalid address – ignoring");
                 return;
             }
 
@@ -78,40 +94,14 @@ public class BleController {
 
             Log.d(LOG_TAG, "onServicesDiscovered(): address=" + address + ", services=" + serviceUuids);
 
-            var bleDevice = new BleDevice(address);
+            var device = registry
+                    .ensure(address)
+                    .setServices(serviceUuids);
 
-            listener.onDeviceReady(bleDevice);
+            listener.onDeviceReady(device);
         }
     };
-
-    private static @NonNull String getAddressFromDevice(@NonNull BluetoothGatt gatt) {
-        return BleDevice.normalizeAddress(gatt.getDevice() == null
-                ? BleDevice.EMPTY_ADDRESS
-                : gatt.getDevice().getAddress());
-    }
-
-    private final ScanCallback scanCallback = new ScanCallback() {
-
-        @Override
-        public void onScanResult(int callbackType, @NonNull ScanResult result) {
-            handleScanResult(result);
-        }
-
-        @Override
-        public void onBatchScanResults(@NonNull List<ScanResult> results) {
-            for (ScanResult result : results) {
-                handleScanResult(result);
-            }
-        }
-
-        @Override
-        public void onScanFailed(int errorCode) {
-            Log.e(LOG_TAG, "onScanFailed(), errorCode=" + errorCode);
-            scanning = false;
-            mainHandler.removeCallbacks(scanTimeoutRunnable);
-            listener.onScanFailed("Scan failed with error code: " + errorCode);
-        }
-    };
+    private boolean scanning = false;
     private BluetoothManager bluetoothManager;
     private BluetoothAdapter bluetoothAdapter;
     private BluetoothLeScanner bluetoothLeScanner;
@@ -208,7 +198,10 @@ public class BleController {
             Log.e(LOG_TAG, "startScan() failed", e);
             return false;
         }
-    }
+    }    private final Runnable scanTimeoutRunnable = () -> {
+        Log.d(LOG_TAG, "Scan timeout reached → stopScan()");
+        stopScan();
+    };
 
     @SuppressLint("MissingPermission")
     public void stopScan() {
@@ -228,7 +221,7 @@ public class BleController {
 
             bluetoothLeScanner.stopScan(scanCallback);
             scanning = false;
-            listener.onScanEnd(activeConnections);
+            listener.onScanEnd(registry.size());
         } catch (SecurityException e) {
             Log.e(LOG_TAG, "Missing BLUETOOTH_SCAN permission at runtime", e);
         } catch (Exception e) {
@@ -240,16 +233,18 @@ public class BleController {
     public void disconnectAllDevices() {
         Log.d(LOG_TAG, "disconnectAllDevices()");
 
-        for (BluetoothGatt gatt : activeConnections.values()) {
+        for (BleDevice device : registry.all()) {
             try {
-                gatt.disconnect();
+                var gatt = device.getBluetoothGatt();
+                if (gatt != null) {
+                    gatt.disconnect();
+                }
             } catch (Exception e) {
                 Log.e(LOG_TAG, "Error while disconnecting GATT", e);
             }
         }
 
-        activeConnections.clear();
-        connectingAddresses.clear();
+        registry.clearAll();
     }
 
     public void shutdown() {
@@ -268,24 +263,28 @@ public class BleController {
             return;
         }
 
-        String address = device.getAddress();
-        if (BleDevice.isEmpty(address)) {
+        BleDeviceAddress address = new BleDeviceAddress(device.getAddress());
+        if (BleDeviceAddress.isEmpty(address.getValue())) {
             return;
         }
 
-        if (activeConnections.containsKey(address) || connectingAddresses.contains(address)) {
+        if (registry.isConnecting(address)) {
+            return;
+        }
+
+        if (registry.isConnected(address)) {
             return;
         }
 
         Log.d(LOG_TAG, "handleScanResult(): scheduling connect to " + address);
-        connectingAddresses.add(address);
+        registry.markConnecting(address);
         connectionHandler.post(() -> connectToDevice(device));
     }
 
     @SuppressLint("MissingPermission")
     private void connectToDevice(@NonNull BluetoothDevice device) {
-        var address = device.getAddress();
-        if (BleDevice.isEmpty(address)) {
+        BleDeviceAddress address = new BleDeviceAddress(device.getAddress());
+        if (BleDeviceAddress.isEmpty(address.getValue())) {
             return;
         }
 
@@ -295,17 +294,49 @@ public class BleController {
 
             if (gatt == null) {
                 Log.e(LOG_TAG, "connectGatt() returned null for " + address);
-                connectingAddresses.remove(address);
+                registry.unmarkConnecting(address);
                 listener.onScanError("Failed to connect to " + address);
             }
         } catch (SecurityException e) {
             Log.e(LOG_TAG, "Missing BLUETOOTH_CONNECT permission when connecting", e);
-            connectingAddresses.remove(address);
+            registry.unmarkConnecting(address);
             listener.onScanError("Missing BLUETOOTH_CONNECT permission");
         } catch (Exception e) {
             Log.e(LOG_TAG, "connectToDevice() failed for " + address, e);
-            connectingAddresses.remove(address);
+            registry.unmarkConnecting(address);
             listener.onScanError("Failed to connect to " + address + ": " + e.getMessage());
         }
     }
+
+
+
+
+    private final ScanCallback scanCallback = new ScanCallback() {
+
+        @Override
+        public void onScanResult(int callbackType, @NonNull ScanResult result) {
+            handleScanResult(result);
+        }
+
+        @Override
+        public void onBatchScanResults(@NonNull List<ScanResult> results) {
+            for (ScanResult result : results) {
+                handleScanResult(result);
+            }
+        }
+
+        @Override
+        public void onScanFailed(int errorCode) {
+            Log.e(LOG_TAG, "onScanFailed(), errorCode=" + errorCode);
+            scanning = false;
+            mainHandler.removeCallbacks(scanTimeoutRunnable);
+            listener.onScanFailed("Scan failed with error code: " + errorCode);
+        }
+    };
+
+
 }
+
+
+
+
