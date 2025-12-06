@@ -2,9 +2,7 @@ package org.jbanaszczyk.corc.ble;
 
 import android.content.Context;
 import android.util.Log;
-
 import androidx.annotation.NonNull;
-
 import org.jbanaszczyk.corc.ble.internal.BleDevicePersistent;
 import org.jbanaszczyk.corc.db.CorcDatabase;
 
@@ -72,27 +70,5 @@ public final class BleDeviceRegistry {
 
     public void clearAll() {
         devices.clear();
-        connectingAddresses.clear();
-    }
-
-    public void markConnecting(@NonNull BleDeviceAddress address) {
-        connectingAddresses.add(address);
-    }
-
-    public void unmarkConnecting(@NonNull BleDeviceAddress address) {
-        connectingAddresses.remove(address);
-    }
-
-    public boolean isConnecting(@NonNull BleDeviceAddress address) {
-        return connectingAddresses.contains(address);
-    }
-
-    public boolean isConnected(@NonNull BleDeviceAddress address) {
-        var device = devices.get(address);
-        if (device == null) {
-            return false;
-        }
-        return device.isConnected();
-
     }
 }

@@ -4,7 +4,6 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothGatt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import org.jbanaszczyk.corc.ble.exceptions.InvalidAddressException;
 
 public final class BleDeviceAddress {
 
@@ -32,13 +31,7 @@ public final class BleDeviceAddress {
     }
 
     @NonNull
-    public static BleDeviceAddress of(@Nullable String address) throws InvalidAddressException {
-        validateAddress(address);
-        return new BleDeviceAddress(address, true);
-    }
-
-    @NonNull
-    public static BleDeviceAddress getAddressFromDevice(@NonNull BluetoothGatt gatt) {
+    public static BleDeviceAddress getAddressFromGatt(@NonNull BluetoothGatt gatt) {
         var device = gatt.getDevice();
         if (device == null) {
             return EMPTY;
@@ -57,18 +50,8 @@ public final class BleDeviceAddress {
         return EMPTY_ADDRESS.equals(normalizeAddress(address));
     }
 
-    public static void validateAddress(@Nullable String address) throws InvalidAddressException {
-        if (address == null || !BluetoothAdapter.checkBluetoothAddress(address)) {
-            throw new InvalidAddressException(address, "Invalid BLE address");
-        }
-    }
-
     public boolean isEmpty() {
         return isEmpty(address);
-    }
-
-    public void validate() throws InvalidAddressException {
-        validateAddress(address);
     }
 
     @NonNull

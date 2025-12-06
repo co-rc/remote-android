@@ -27,62 +27,18 @@ public class BleController {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
 
-        @SuppressLint("MissingPermission")
-        @Override
-        public void onConnectionStateChange(@NonNull BluetoothGatt gatt, int status, int newState) {
-            var address = BleDeviceAddress.getAddressFromDevice(gatt);
-            Log.d(LOG_TAG, "onConnectionStateChange(): address=" + address + ", status=" + status + ", newState=" + newState);
-
-            registry.unmarkConnecting(address);
-
-            switch (newState) {
-                case BluetoothProfile.STATE_CONNECTED -> {
-                    if (address.isEmpty()) {
-                        Log.w(LOG_TAG, "STATE_CONNECTED with invalid address – ignoring: " + address);
-                        try {
-                            gatt.close();
-                        } catch (Exception ignored) {
-                        }
-                        return;
-                    }
-                    var device = registry
-                            .ensure(address)
-                            .setBluetoothGatt(gatt);
-
-                    listener.onConnectionStateChanged(device, true);
-
-                    var started = gatt.discoverServices();
-                    Log.d(LOG_TAG, "discoverServices() started=" + started);
-                }
-                case BluetoothProfile.STATE_DISCONNECTED -> {
-                    var device = registry
-                            .ensure(address)
-                            .setBluetoothGatt(null);
-                    try {
-                        gatt.close();
-                    } catch (Exception e) {
-                        Log.e(LOG_TAG, "Error closing GATT for " + address, e);
-                    }
-                    listener.onConnectionStateChanged(device, false);
-                }
-                case BluetoothProfile.STATE_DISCONNECTING ->
-                        Log.d(LOG_TAG, "onConnectionStateChange(): STATE_DISCONNECTING");
-                case BluetoothProfile.STATE_CONNECTING -> Log.d(LOG_TAG, "onConnectionStateChange(): STATE_CONNECTING");
-            }
-        }
-
         @Override
         public void onServicesDiscovered(@NonNull BluetoothGatt gatt, int status) {
-            var address = BleDeviceAddress.getAddressFromDevice(gatt);
+            var address = BleDeviceAddress.getAddressFromGatt(gatt);
+
+            if (address.isEmpty()) {
+                Log.w(LOG_TAG, "onServicesDiscovered(): invalid address – ignoring");
+                return;
+            }
 
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 Log.e(LOG_TAG, "onServicesDiscovered(): GATT error " + status + " for " + address);
                 listener.onScanError("Service discovery failed for " + address + " (status " + status + ")");
-                return;
-            }
-
-            if (address.isEmpty()) {
-                Log.w(LOG_TAG, "onServicesDiscovered(): invalid address – ignoring");
                 return;
             }
 
@@ -94,11 +50,36 @@ public class BleController {
 
             Log.d(LOG_TAG, "onServicesDiscovered(): address=" + address + ", services=" + serviceUuids);
 
-            var device = registry
-                    .ensure(address)
-                    .setServices(serviceUuids);
-
+            var device = registry.ensure(address);
+            device.setServices(serviceUuids);
             listener.onDeviceReady(device);
+        }
+
+        @SuppressLint("MissingPermission")
+        @Override
+        public void onConnectionStateChange(@NonNull BluetoothGatt gatt, int status, int newState) {
+            var address = BleDeviceAddress.getAddressFromGatt(gatt);
+            Log.d(LOG_TAG, "onConnectionStateChange(): address=" + address + ", status=" + status + ", newState=" + newState);
+
+            var device = registry.ensure(address);
+            switch (newState) {
+                case BluetoothProfile.STATE_CONNECTED -> {
+                    device.setState(BleDevice.State.CONNECTED, gatt);
+                    listener.onConnectionStateChanged(device, true);
+                    gatt.discoverServices();
+                }
+                case BluetoothProfile.STATE_DISCONNECTED -> {
+                    device.setState(BleDevice.State.DISCONNECTED);
+                    try {
+                        gatt.close();
+                    } catch (Exception e) {
+                        Log.e(LOG_TAG, "Error closing GATT for " + address, e);
+                    }
+                    listener.onConnectionStateChanged(device, false);
+                }
+                case BluetoothProfile.STATE_DISCONNECTING -> Log.d(LOG_TAG, "onConnectionStateChange(): STATE_DISCONNECTING");
+                case BluetoothProfile.STATE_CONNECTING -> Log.d(LOG_TAG, "onConnectionStateChange(): STATE_CONNECTING");
+            }
         }
     };
     private boolean scanning = false;
@@ -225,10 +206,7 @@ public class BleController {
         } catch (Exception e) {
             Log.e(LOG_TAG, "stopScan() failed", e);
         }
-    }    private final Runnable scanTimeoutRunnable = () -> {
-        Log.d(LOG_TAG, "Scan timeout reached → stopScan()");
-        stopScan();
-    };
+    }
 
     @SuppressLint("MissingPermission")
     public void disconnectAllDevices() {
@@ -236,7 +214,7 @@ public class BleController {
 
         for (BleDevice device : registry.all()) {
             try {
-                var gatt = device.getBluetoothGatt();
+                var gatt = device.getGatt();
                 if (gatt != null) {
                     gatt.disconnect();
                 }
@@ -258,59 +236,66 @@ public class BleController {
         bluetoothManager = null;
     }
 
+    private final Runnable scanTimeoutRunnable = () -> {
+        Log.d(LOG_TAG, "Scan timeout reached → stopScan()");
+        stopScan();
+    };
+
     private void handleScanResult(@NonNull ScanResult result) {
-        BluetoothDevice device = result.getDevice();
-        if (device == null) {
+        BluetoothDevice bluetoothDevice = result.getDevice();
+        if (bluetoothDevice == null) {
             return;
         }
 
-        BleDeviceAddress address = new BleDeviceAddress(device.getAddress());
+        BleDeviceAddress address = new BleDeviceAddress(bluetoothDevice.getAddress());
         if (BleDeviceAddress.isEmpty(address.getValue())) {
             return;
         }
 
-        if (registry.isConnecting(address)) {
-            return;
-        }
-
-        if (registry.isConnected(address)) {
+        var device = registry.ensure(address);
+        if (device.getState().isActive()) {
             return;
         }
 
         Log.d(LOG_TAG, "handleScanResult(): scheduling connect to " + address);
-        registry.markConnecting(address);
-        connectionHandler.post(() -> connectToDevice(device));
+
+        device.setState(BleDevice.State.CONNECTING);
+        connectionHandler.post(() -> connectToDevice(device, bluetoothDevice));
     }
 
     @SuppressLint("MissingPermission")
-    private void connectToDevice(@NonNull BluetoothDevice device) {
-        BleDeviceAddress address = new BleDeviceAddress(device.getAddress());
-        if (BleDeviceAddress.isEmpty(address.getValue())) {
-            return;
-        }
+    private void connectToDevice(@NonNull BleDevice device, BluetoothDevice bluetoothDevice) {
+        final BleDeviceAddress address = device.getAddress();
+        Log.d(LOG_TAG, "connectToDevice(): " + address);
 
+        final BluetoothGatt gatt;
         try {
-            Log.d(LOG_TAG, "connectToDevice(): " + address);
-            BluetoothGatt gatt = device.connectGatt(appContext, false, gattCallback);
+            gatt = bluetoothDevice.connectGatt(appContext, false, gattCallback);
 
             if (gatt == null) {
                 Log.e(LOG_TAG, "connectGatt() returned null for " + address);
-                registry.unmarkConnecting(address);
-                listener.onScanError("Failed to connect to " + address);
+                handleConnectionFailure(device, "Failed to connect to " + address);
+                return;
             }
         } catch (SecurityException e) {
-            Log.e(LOG_TAG, "Missing BLUETOOTH_CONNECT permission when connecting", e);
-            registry.unmarkConnecting(address);
-            listener.onScanError("Missing BLUETOOTH_CONNECT permission");
+            Log.e(LOG_TAG, "Missing BLUETOOTH_CONNECT permission when connecting to " + address, e);
+            handleConnectionFailure(device, "Missing BLUETOOTH_CONNECT permission");
+            return;
+        } catch (NullPointerException unexpected) {
+            return;
         } catch (Exception e) {
             Log.e(LOG_TAG, "connectToDevice() failed for " + address, e);
-            registry.unmarkConnecting(address);
-            listener.onScanError("Failed to connect to " + address + ": " + e.getMessage());
+            handleConnectionFailure(device, "Failed to connect to " + address + ": " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+            return;
         }
+
+        device.setState(BleDevice.State.CONNECTED, gatt);
     }
 
-
-
+    private void handleConnectionFailure(@NonNull BleDevice device, @NonNull String message) {
+        device.setState(BleDevice.State.DISCONNECTED);
+        listener.onScanError(message);
+    }
 
     private final ScanCallback scanCallback = new ScanCallback() {
 
