@@ -20,9 +20,6 @@ public final class BleDeviceRegistry {
     @NonNull
     public Collection<BleDevice> registerPersistedDevices(@NonNull Collection<BleDevice> persistedDevices) {
         List<BleDevice> result = new ArrayList<>();
-        if (persistedDevices.isEmpty()) {
-            return result;
-        }
         for (BleDevice stored : persistedDevices) {
             if (stored == null) {
                 continue;
@@ -34,8 +31,7 @@ public final class BleDeviceRegistry {
 
             result.add(ensure(address)
                     .setServices(stored.getServices())
-                    .setConfiguration(stored.getConfiguration())
-                    .setState(BleDevice.State.CONNECTING));
+                    .setConfiguration(stored.getConfiguration()));
         }
         return result;
     }

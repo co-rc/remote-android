@@ -4,8 +4,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.room.TypeConverter;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 public class BleTypeConverters {
@@ -15,33 +15,33 @@ public class BleTypeConverters {
     // ===== UUID list converters =====
     @TypeConverter
     @NonNull
-    public static String fromUuidList(@Nullable List<UUID> uuids) {
-        if (uuids == null || uuids.isEmpty()) {
+    public static String fromUuids(@Nullable Set<UUID> uuids) {
+        if (uuids == null) {
             return "";
         }
-        StringBuilder sb = new StringBuilder();
+        StringBuilder stringBuilder = new StringBuilder();
         for (UUID uuid : uuids) {
             if (uuid != null) {
-                if (!sb.isEmpty()) sb.append(CSV_SEPARATOR);
-                sb.append(uuid);
+                if (!stringBuilder.isEmpty()) {
+                    stringBuilder.append(CSV_SEPARATOR);
+                }
+                stringBuilder.append(uuid);
             }
         }
-        return sb.toString();
+        return stringBuilder.toString();
     }
 
     @TypeConverter
     @NonNull
-    public static List<UUID> toUuidList(@Nullable String data) {
-        List<UUID> result = new ArrayList<>();
-        if (data == null || data.isEmpty()) {
+    public static Set<UUID> toUuids(@Nullable String data) {
+        Set<UUID> result = new HashSet<>();
+        if (data == null) {
             return result;
         }
         String[] parts = data.split(String.valueOf(CSV_SEPARATOR));
         for (String part : parts) {
-            String trimmed = part.trim();
-            if (trimmed.isEmpty()) continue;
             try {
-                result.add(UUID.fromString(trimmed));
+                result.add(UUID.fromString(part.trim()));
             } catch (IllegalArgumentException ignored) {
             }
         }

@@ -6,6 +6,7 @@ import androidx.annotation.Nullable;
 import org.jbanaszczyk.corc.ble.internal.BleDevicePersistent;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 public class BleDevice {
@@ -41,11 +42,11 @@ public class BleDevice {
     }
 
     @NonNull
-    public List<UUID> getServices() {
+    public Set<UUID> getServices() {
         return persistent.getServices();
     }
 
-    public BleDevice setServices(@Nullable List<UUID> services) {
+    public BleDevice setServices(@Nullable Set<UUID> services) {
         persistent.setServices(services);
         return this;
     }

@@ -15,6 +15,7 @@ import org.jbanaszczyk.corc.ble.repo.RoomBleDeviceRepository;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 public class BleController {
 
@@ -49,7 +50,7 @@ public class BleController {
                     .getServices()
                     .stream()
                     .map(BluetoothGattService::getUuid)
-                    .toList();
+                    .collect(Collectors.toSet());
 
             Log.d(LOG_TAG, "onServicesDiscovered(): address=" + address + ", services=" + serviceUuids);
 
@@ -291,24 +292,23 @@ public class BleController {
                 var devicesToConnect = registry.registerPersistedDevices(persisted);
 
                 for (BleDevice device : devicesToConnect) {
-                    if (device == null) continue;
                     BleDeviceAddress address = device.getAddress();
-                    if (address.isEmpty()) continue;
                     try {
-                        BluetoothDevice bt = bluetoothAdapter.getRemoteDevice(address.getValue());
-                        if (bt == null) {
+                        BluetoothDevice bluetoothDevice = bluetoothAdapter.getRemoteDevice(address.getValue());
+                        if (bluetoothDevice == null) {
                             Log.w(LOG_TAG, "getRemoteDevice returned null for " + address);
                             continue;
                         }
-                        connectionHandler.post(() -> connectToDevice(device, bt));
-                    } catch (IllegalArgumentException iae) {
-                        Log.e(LOG_TAG, "Invalid Bluetooth address: " + address, iae);
-                    } catch (Exception ex) {
-                        Log.e(LOG_TAG, "Failed scheduling reconnect for " + address, ex);
+
+                        device.setState(BleDevice.State.CONNECTING);
+                        connectionHandler.post(() -> connectToDevice(device, bluetoothDevice));
+                    } catch (IllegalArgumentException exception) {
+                        Log.e(LOG_TAG, "Invalid Bluetooth address: " + address, exception);
+                    } catch (Exception exception) {
+                        Log.e(LOG_TAG, "Failed scheduling reconnect for " + address, exception);
                     }
                 }
 
-                // Start scanner after reconnects have been scheduled
                 mainHandler.post(() -> {
                     if (!scanning) {
                         startScan();

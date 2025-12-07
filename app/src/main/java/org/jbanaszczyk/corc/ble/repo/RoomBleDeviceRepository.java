@@ -46,7 +46,6 @@ public final class RoomBleDeviceRepository implements BleDeviceRepository {
 
     @Override
     public void saveAll(@NonNull Collection<BleDevice> devices) {
-        Objects.requireNonNull(devices, "devices");
         if (devices.isEmpty()) {
             return;
         }
