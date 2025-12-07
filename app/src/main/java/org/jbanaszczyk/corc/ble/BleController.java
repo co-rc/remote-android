@@ -10,6 +10,8 @@ import android.os.ParcelUuid;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import org.jbanaszczyk.corc.BleConnectionListener;
+import org.jbanaszczyk.corc.ble.repo.BleDeviceRepository;
+import org.jbanaszczyk.corc.ble.repo.RoomBleDeviceRepository;
 
 import java.util.List;
 import java.util.UUID;
@@ -25,6 +27,7 @@ public class BleController {
     private final Handler connectionHandler = new Handler(Looper.getMainLooper());
     private final BleDeviceRegistry registry;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final BleDeviceRepository deviceRepository;
     private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
 
         @Override
@@ -52,6 +55,8 @@ public class BleController {
 
             var device = registry.ensure(address);
             device.setServices(serviceUuids);
+            // Persist the completed device (overwrite by address) using repository (off main thread)
+            deviceRepository.save(device);
             listener.onDeviceReady(device);
         }
 
@@ -88,9 +93,16 @@ public class BleController {
     private BluetoothLeScanner bluetoothLeScanner;
 
     public BleController(@NonNull Context context, @NonNull BleConnectionListener listener) {
+        this(context, listener, new RoomBleDeviceRepository(context));
+    }
+
+    public BleController(@NonNull Context context,
+                         @NonNull BleConnectionListener listener,
+                         @NonNull BleDeviceRepository deviceRepository) {
         this.appContext = context.getApplicationContext();
         this.listener = listener;
-        this.registry = new BleDeviceRegistry(this.appContext);
+        this.registry = new BleDeviceRegistry();
+        this.deviceRepository = deviceRepository;
     }
 
     public void initialize() {
@@ -121,6 +133,8 @@ public class BleController {
             Log.e(LOG_TAG, "BluetoothLeScanner is null");
             listener.onScanError("BluetoothLeScanner is not available");
         }
+
+        startReconnectToPersistedDevices();
     }
 
     public boolean isScanning() {
@@ -128,8 +142,8 @@ public class BleController {
     }
 
     @SuppressLint("MissingPermission")
-    public boolean startScan() {
-        return startScan(0L);
+    public void startScan() {
+        startScan(0L);
     }
 
     @SuppressLint("MissingPermission")
@@ -261,6 +275,49 @@ public class BleController {
 
         device.setState(BleDevice.State.CONNECTING);
         connectionHandler.post(() -> connectToDevice(device, bluetoothDevice));
+    }
+
+    private void startReconnectToPersistedDevices() {
+        new Thread(() -> {
+            try {
+                if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) {
+                    Log.w(LOG_TAG, "Skipping persisted reconnect – adapter not ready or disabled");
+                    return;
+                }
+
+                List<BleDevice> persisted = deviceRepository.loadAll();
+                Log.d(LOG_TAG, "Attempting reconnect for " + persisted.size() + " persisted devices");
+
+                var devicesToConnect = registry.registerPersistedDevices(persisted);
+
+                for (BleDevice device : devicesToConnect) {
+                    if (device == null) continue;
+                    BleDeviceAddress address = device.getAddress();
+                    if (address.isEmpty()) continue;
+                    try {
+                        BluetoothDevice bt = bluetoothAdapter.getRemoteDevice(address.getValue());
+                        if (bt == null) {
+                            Log.w(LOG_TAG, "getRemoteDevice returned null for " + address);
+                            continue;
+                        }
+                        connectionHandler.post(() -> connectToDevice(device, bt));
+                    } catch (IllegalArgumentException iae) {
+                        Log.e(LOG_TAG, "Invalid Bluetooth address: " + address, iae);
+                    } catch (Exception ex) {
+                        Log.e(LOG_TAG, "Failed scheduling reconnect for " + address, ex);
+                    }
+                }
+
+                // Start scanner after reconnects have been scheduled
+                mainHandler.post(() -> {
+                    if (!scanning) {
+                        startScan();
+                    }
+                });
+            } catch (Throwable t) {
+                Log.e(LOG_TAG, "Persisted devices reconnect routine failed", t);
+            }
+        }, "corc-ble-reconnect").start();
     }
 
     @SuppressLint("MissingPermission")

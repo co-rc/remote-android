@@ -21,7 +21,6 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import org.jbanaszczyk.corc.ble.BleController;
 import org.jbanaszczyk.corc.ble.BleDevice;
-import org.jbanaszczyk.corc.ble.internal.BleDevicePersistent;
 
 import java.util.List;
 

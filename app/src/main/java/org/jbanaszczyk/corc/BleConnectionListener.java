@@ -2,8 +2,8 @@ package org.jbanaszczyk.corc;
 
 import androidx.annotation.NonNull;
 import org.jbanaszczyk.corc.ble.BleDevice;
-import org.jbanaszczyk.corc.ble.internal.BleDevicePersistent;
 
+@SuppressWarnings("EmptyMethod")
 public interface BleConnectionListener {
 
     void onScanStarted();

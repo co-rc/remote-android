@@ -35,8 +35,9 @@ public class BleDevice {
         return persistent.getConfiguration();
     }
 
-    public void setConfiguration(@Nullable String configuration) {
+    public BleDevice setConfiguration(@Nullable String configuration) {
         persistent.setConfiguration(configuration);
+        return this;
     }
 
     @NonNull
@@ -44,8 +45,9 @@ public class BleDevice {
         return persistent.getServices();
     }
 
-    public void setServices(@Nullable List<UUID> services) {
+    public BleDevice setServices(@Nullable List<UUID> services) {
         persistent.setServices(services);
+        return this;
     }
 
     @Nullable
@@ -57,12 +59,14 @@ public class BleDevice {
         return runtime.getState();
     }
 
-    public void setState(State state) {
+    public BleDevice setState(State state) {
         runtime.setState(state);
+        return this;
     }
 
-    public void setState(State state, BluetoothGatt gatt) {
+    public BleDevice setState(State state, BluetoothGatt gatt) {
         runtime.setState(state, gatt);
+        return this;
     }
 
     public enum State {
