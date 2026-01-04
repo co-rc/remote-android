@@ -3,7 +3,11 @@ package org.jbanaszczyk.corc.db;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.room.*;
+import androidx.room.Dao;
+import androidx.room.Delete;
+import androidx.room.Insert;
+import androidx.room.OnConflictStrategy;
+import androidx.room.Query;
 import org.jbanaszczyk.corc.ble.internal.BleDevicePersistent;
 
 import java.util.List;
@@ -43,9 +47,7 @@ public abstract class BleDeviceDao {
     }
 
     public void upsertAll(@Nullable List<BleDevicePersistent> devices) {
-        if (devices == null ) {
-            return;
-        }
+        if (devices == null ) return;
         Log.d(LOG_TAG, "BleDeviceDao.upsertAll count=" + devices.size());
         upsertAllImpl(devices);
     }

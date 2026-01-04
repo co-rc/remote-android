@@ -46,9 +46,7 @@ public final class RoomBleDeviceRepository implements BleDeviceRepository {
 
     @Override
     public void saveAll(@NonNull Collection<BleDevice> devices) {
-        if (devices.isEmpty()) {
-            return;
-        }
+        if (devices.isEmpty()) return;
         ioExecutor.execute(() -> {
             try {
                 List<BleDevicePersistent> entities = new ArrayList<>(devices.size());

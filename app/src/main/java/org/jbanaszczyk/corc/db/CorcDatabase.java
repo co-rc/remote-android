@@ -89,9 +89,7 @@ public abstract class CorcDatabase extends RoomDatabase {
 
     private static void ensureVersion(@NonNull Context context, @NonNull DbSingleton holder) {
         CorcDatabase currentDb = holder.db;
-        if (currentDb == null) {
-            return;
-        }
+        if (currentDb == null) return;
 
         VersionDao versionDao = currentDb.versionDao();
         VersionEntity version = versionDao.getSingleton();

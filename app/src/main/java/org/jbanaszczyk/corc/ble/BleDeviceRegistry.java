@@ -13,6 +13,8 @@ public final class BleDeviceRegistry {
 
     @NonNull
     private final Map<BleDeviceAddress, BleDevice> devices = new ConcurrentHashMap<>();
+    @NonNull
+    private final Map<BleDeviceAddress, BleConnectionContext> contexts = new ConcurrentHashMap<>();
 
     public BleDeviceRegistry() {
     }
@@ -21,13 +23,9 @@ public final class BleDeviceRegistry {
     public Collection<BleDevice> registerPersistedDevices(@NonNull Collection<BleDevice> persistedDevices) {
         List<BleDevice> result = new ArrayList<>();
         for (BleDevice stored : persistedDevices) {
-            if (stored == null) {
-                continue;
-            }
+            if (stored == null) continue;
             BleDeviceAddress address = stored.getAddress();
-            if (address.isEmpty()) {
-                continue;
-            }
+            if (address.isEmpty()) continue;
 
             result.add(ensure(address)
                     .setServices(stored.getServices())
@@ -44,9 +42,12 @@ public final class BleDeviceRegistry {
         }
         BleDevice created = new BleDevice(new BleDevicePersistent(address));
         BleDevice race = devices.putIfAbsent(address, created);
+        // Ensure context exists as well
+        contexts.putIfAbsent(address, new BleConnectionContext());
         return race != null ? race : created;
     }
 
+    @NonNull
     public Collection<BleDevice> all() {
         return devices.values();
     }
@@ -57,5 +58,24 @@ public final class BleDeviceRegistry {
 
     public void clearAll() {
         devices.clear();
+        contexts.clear();
     }
+
+    @NonNull
+    public BleConnectionContext getOrCreateContext(@NonNull BleDeviceAddress address) {
+        ensure(address);
+        BleConnectionContext ctx = contexts.get(address);
+        if (ctx == null) {
+            ctx = new BleConnectionContext();
+            contexts.put(address, ctx);
+        }
+        return ctx;
+    }
+
+    public BleConnectionContext getContext(@NonNull BleDeviceAddress address) {
+        return contexts.get(address);
+    }
+
+    @NonNull
+    public Collection<BleConnectionContext> allContexts() { return contexts.values(); }
 }

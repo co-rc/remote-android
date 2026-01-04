@@ -143,9 +143,7 @@ public class MainActivity extends AppCompatActivity implements BleConnectionList
     }
 
     private void startBleFeatures() {
-        if (bleFeaturesStarted) {
-            return;
-        }
+        if (bleFeaturesStarted) return;
         if (bleController == null) {
             bleController = new BleController(this, this);
         }
@@ -154,9 +152,7 @@ public class MainActivity extends AppCompatActivity implements BleConnectionList
     }
 
     private void stopBleFeatures() {
-        if (!bleFeaturesStarted) {
-            return;
-        }
+        if (!bleFeaturesStarted) return;
         Log.d(LOG_TAG, "stopBleFeatures()");
         cancelScanScheduling();
         stopScanning();
@@ -195,9 +191,7 @@ public class MainActivity extends AppCompatActivity implements BleConnectionList
 
     private void startScanning() {
         var controllerScanning = bleController != null && bleController.isScanning();
-        if (!appInForeground || !bleFeaturesStarted || controllerScanning || !hasAllRequiredPermissions() || !isBluetoothEnabled()) {
-            return;
-        }
+        if (!meetsScanPreconditions() || controllerScanning) return;
         Log.d(LOG_TAG, "startScanning()");
 
         cancelScanScheduling();
@@ -216,7 +210,7 @@ public class MainActivity extends AppCompatActivity implements BleConnectionList
     }
 
     private void scheduleNextScan() {
-        if (!appInForeground || !hasAllRequiredPermissions() || !isBluetoothEnabled() || !bleFeaturesStarted) {
+        if (!meetsScanPreconditions()) {
             Log.d(LOG_TAG, "scheduleNextScan(): conditions not met (foreground/permissions/bluetooth/features), not scheduling");
             return;
         }
@@ -233,6 +227,10 @@ public class MainActivity extends AppCompatActivity implements BleConnectionList
     }
 
     //===============================================================
+
+    private boolean meetsScanPreconditions() {
+        return appInForeground && bleFeaturesStarted && hasAllRequiredPermissions() && isBluetoothEnabled();
+    }
 
     private void showPermissionsRequiredMessage() {
         new AlertDialog.Builder(this)
@@ -364,10 +362,7 @@ public class MainActivity extends AppCompatActivity implements BleConnectionList
     private final BroadcastReceiver bluetoothStateReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            if (!BluetoothAdapter.ACTION_STATE_CHANGED.equals(intent.getAction())) {
-                return;
-            }
-
+            if (!BluetoothAdapter.ACTION_STATE_CHANGED.equals(intent.getAction())) return;
             int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR);
             switch (state) {
                 case BluetoothAdapter.STATE_ON -> onBluetoothTurnedOn();

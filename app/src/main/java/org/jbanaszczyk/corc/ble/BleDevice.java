@@ -1,11 +1,9 @@
 package org.jbanaszczyk.corc.ble;
 
-import android.bluetooth.BluetoothGatt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import org.jbanaszczyk.corc.ble.internal.BleDevicePersistent;
 
-import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -13,17 +11,9 @@ public class BleDevice {
 
     @NonNull
     private final BleDevicePersistent persistent;
-    @NonNull
-    private final BleDeviceRuntime runtime;
-
-
-    private BleDevice(@NonNull BleDevicePersistent persistent, @NonNull BleDeviceRuntime runtime) {
-        this.persistent = persistent;
-        this.runtime = runtime;
-    }
 
     public BleDevice(@NonNull BleDevicePersistent persistent) {
-        this(persistent, new BleDeviceRuntime());
+        this.persistent = persistent;
     }
 
     @NonNull
@@ -49,79 +39,5 @@ public class BleDevice {
     public BleDevice setServices(@Nullable Set<UUID> services) {
         persistent.setServices(services);
         return this;
-    }
-
-    @Nullable
-    public BluetoothGatt getGatt() {
-        return runtime.getGatt();
-    }
-
-    public State getState() {
-        return runtime.getState();
-    }
-
-    public BleDevice setState(State state) {
-        runtime.setState(state);
-        return this;
-    }
-
-    public BleDevice setState(State state, BluetoothGatt gatt) {
-        runtime.setState(state, gatt);
-        return this;
-    }
-
-    public enum State {
-        NO_CHANGE,
-        DISCONNECTED,
-        CONNECTING,
-        CONNECTED;
-
-        public boolean isDiconnected() {
-            return this == DISCONNECTED;
-        }
-
-        public boolean isActive() {
-            return !isDiconnected();
-        }
-    }
-
-    private static class BleDeviceRuntime {
-
-        @Nullable
-        private BluetoothGatt gatt = null;
-
-
-        private void clear() {
-            gatt = null;
-        }
-
-        private State state = State.DISCONNECTED;
-
-        public BleDeviceRuntime() {
-        }
-
-        @Nullable
-        public BluetoothGatt getGatt() {
-            return gatt;
-        }
-
-        public State getState() {
-            return state;
-        }
-
-        public void setState(State state) {
-            if (state == State.NO_CHANGE) {
-                return;
-            }
-            this.state = state;
-            if (state.isDiconnected()) {
-                clear();
-            }
-        }
-
-        public void setState(State state, BluetoothGatt gatt) {
-            setState(state);
-            this.gatt = gatt;
-        }
     }
 }

@@ -1,21 +1,32 @@
 package org.jbanaszczyk.corc.ble;
 
 import android.annotation.SuppressLint;
-import android.bluetooth.*;
-import android.bluetooth.le.*;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothManager;
+import android.bluetooth.le.BluetoothLeScanner;
+import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanFilter;
+import android.bluetooth.le.ScanResult;
+import android.bluetooth.le.ScanSettings;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.ParcelUuid;
 import android.util.Log;
 import androidx.annotation.NonNull;
-import org.jbanaszczyk.corc.BleConnectionListener;
-import org.jbanaszczyk.corc.ble.repo.BleDeviceRepository;
-import org.jbanaszczyk.corc.ble.repo.RoomBleDeviceRepository;
-
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
+import java.util.concurrent.TimeUnit;
+import org.jbanaszczyk.corc.BleConnectionListener;
+import org.jbanaszczyk.corc.ble.core.AndroidScheduler;
+import org.jbanaszczyk.corc.ble.core.BleGattClient;
+import org.jbanaszczyk.corc.ble.core.BleOperation;
+import org.jbanaszczyk.corc.ble.core.OperationExecutor;
+import org.jbanaszczyk.corc.ble.core.OperationQueue;
+import org.jbanaszczyk.corc.ble.core.StandardGattOperationExecutor;
+import org.jbanaszczyk.corc.ble.repo.BleDeviceRepository;
+import org.jbanaszczyk.corc.ble.repo.RoomBleDeviceRepository;
 
 public class BleController {
 
@@ -29,65 +40,12 @@ public class BleController {
     private final BleDeviceRegistry registry;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final BleDeviceRepository deviceRepository;
-    private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
-
-        @Override
-        public void onServicesDiscovered(@NonNull BluetoothGatt gatt, int status) {
-            var address = BleDeviceAddress.getAddressFromGatt(gatt);
-
-            if (address.isEmpty()) {
-                Log.w(LOG_TAG, "onServicesDiscovered(): invalid address – ignoring");
-                return;
-            }
-
-            if (status != BluetoothGatt.GATT_SUCCESS) {
-                Log.e(LOG_TAG, "onServicesDiscovered(): GATT error " + status + " for " + address);
-                listener.onScanError("Service discovery failed for " + address + " (status " + status + ")");
-                return;
-            }
-
-            var serviceUuids = gatt
-                    .getServices()
-                    .stream()
-                    .map(BluetoothGattService::getUuid)
-                    .collect(Collectors.toSet());
-
-            Log.d(LOG_TAG, "onServicesDiscovered(): address=" + address + ", services=" + serviceUuids);
-
-            var device = registry.ensure(address);
-            device.setServices(serviceUuids);
-            // Persist the completed device (overwrite by address) using repository (off main thread)
-            deviceRepository.save(device);
-            listener.onDeviceReady(device);
-        }
-
-        @SuppressLint("MissingPermission")
-        @Override
-        public void onConnectionStateChange(@NonNull BluetoothGatt gatt, int status, int newState) {
-            var address = BleDeviceAddress.getAddressFromGatt(gatt);
-            Log.d(LOG_TAG, "onConnectionStateChange(): address=" + address + ", status=" + status + ", newState=" + newState);
-
-            var device = registry.ensure(address);
-            switch (newState) {
-                case BluetoothProfile.STATE_CONNECTED -> {
-                    device.setState(BleDevice.State.CONNECTED, gatt);
-                    listener.onConnectionStateChanged(device, true);
-                    gatt.discoverServices();
-                }
-                case BluetoothProfile.STATE_DISCONNECTED -> {
-                    device.setState(BleDevice.State.DISCONNECTED);
-                    try {
-                        gatt.close();
-                    } catch (Exception e) {
-                        Log.e(LOG_TAG, "Error closing GATT for " + address, e);
-                    }
-                    listener.onConnectionStateChanged(device, false);
-                }
-                case BluetoothProfile.STATE_DISCONNECTING -> Log.d(LOG_TAG, "onConnectionStateChange(): STATE_DISCONNECTING");
-                case BluetoothProfile.STATE_CONNECTING -> Log.d(LOG_TAG, "onConnectionStateChange(): STATE_CONNECTING");
-            }
-        }
-    };
+    // ----- Operation queue infrastructure (single, minimal integration) -----
+    private final OperationQueue operationQueue;
+    private final OperationExecutor operationExecutor;
+    private final Handler operationHandler;
+    private final BleGattClient gattClient;
+    private final long operationTimeoutMillis = TimeUnit.SECONDS.toMillis(10); // default timeout per operation
     private boolean scanning = false;
     private BluetoothManager bluetoothManager;
     private BluetoothAdapter bluetoothAdapter;
@@ -100,10 +58,39 @@ public class BleController {
     public BleController(@NonNull Context context,
                          @NonNull BleConnectionListener listener,
                          @NonNull BleDeviceRepository deviceRepository) {
+        this(context, listener, deviceRepository, new Handler(Looper.getMainLooper()), new StandardGattOperationExecutor());
+    }
+
+    public BleController(@NonNull Context context,
+                         @NonNull BleConnectionListener listener,
+                         @NonNull BleDeviceRepository deviceRepository,
+                         @NonNull Handler operationHandler,
+                         @NonNull OperationExecutor operationExecutor) {
         this.appContext = context.getApplicationContext();
         this.listener = listener;
         this.registry = new BleDeviceRegistry();
         this.deviceRepository = deviceRepository;
+        this.operationHandler = operationHandler;
+        this.operationExecutor = operationExecutor;
+        this.operationQueue = new OperationQueue(new AndroidScheduler(operationHandler), () -> operationTimeoutMillis);
+        this.gattClient = new BleGattClient(appContext, registry, deviceRepository, listener, operationQueue, operationExecutor);
+    }
+
+    // ---- High level GATT convenience (delegates to queue) ----
+    public boolean readCharacteristic(@NonNull BleDevice device, @NonNull UUID characteristicUuid) {
+        return gattClient.enqueue(device, BleOperation.read(characteristicUuid));
+    }
+
+    public boolean writeCharacteristic(@NonNull BleDevice device, @NonNull UUID characteristicUuid, @NonNull byte[] payload) {
+        return gattClient.enqueue(device, BleOperation.write(characteristicUuid, payload));
+    }
+
+    public boolean enableNotifications(@NonNull BleDevice device, @NonNull UUID characteristicUuid) {
+        return gattClient.enqueue(device, BleOperation.enableNotify(characteristicUuid));
+    }
+
+    public boolean disableNotifications(@NonNull BleDevice device, @NonNull UUID characteristicUuid) {
+        return gattClient.enqueue(device, BleOperation.disableNotify(characteristicUuid));
     }
 
     public void initialize() {
@@ -201,9 +188,7 @@ public class BleController {
     public void stopScan() {
         Log.d(LOG_TAG, "stopScan()");
 
-        if (bluetoothLeScanner == null) {
-            return;
-        }
+        if (bluetoothLeScanner == null) return;
 
         try {
             // Cancel any pending timeout
@@ -229,7 +214,8 @@ public class BleController {
 
         for (BleDevice device : registry.all()) {
             try {
-                var gatt = device.getGatt();
+                var ctx = registry.getContext(device.getAddress());
+                var gatt = ctx != null ? ctx.getGatt() : null;
                 if (gatt != null) {
                     gatt.disconnect();
                 }
@@ -258,23 +244,17 @@ public class BleController {
 
     private void handleScanResult(@NonNull ScanResult result) {
         BluetoothDevice bluetoothDevice = result.getDevice();
-        if (bluetoothDevice == null) {
-            return;
-        }
+        if (bluetoothDevice == null) return;
 
         BleDeviceAddress address = new BleDeviceAddress(bluetoothDevice.getAddress());
-        if (BleDeviceAddress.isEmpty(address.getValue())) {
-            return;
-        }
+        if (BleDeviceAddress.isEmpty(address.getValue())) return;
 
         var device = registry.ensure(address);
-        if (device.getState().isActive()) {
-            return;
-        }
+        var ctx = registry.getOrCreateContext(address);
+        if (ctx.getState() != BleConnectionContext.GattState.DISCONNECTED) return;
 
         Log.d(LOG_TAG, "handleScanResult(): scheduling connect to " + address);
-
-        device.setState(BleDevice.State.CONNECTING);
+        ctx.setState(BleConnectionContext.GattState.CONNECTING);
         connectionHandler.post(() -> connectToDevice(device, bluetoothDevice));
     }
 
@@ -300,7 +280,7 @@ public class BleController {
                             continue;
                         }
 
-                        device.setState(BleDevice.State.CONNECTING);
+                        registry.getOrCreateContext(address).setState(BleConnectionContext.GattState.CONNECTING);
                         connectionHandler.post(() -> connectToDevice(device, bluetoothDevice));
                     } catch (IllegalArgumentException exception) {
                         Log.e(LOG_TAG, "Invalid Bluetooth address: " + address, exception);
@@ -322,35 +302,11 @@ public class BleController {
 
     @SuppressLint("MissingPermission")
     private void connectToDevice(@NonNull BleDevice device, BluetoothDevice bluetoothDevice) {
-        final BleDeviceAddress address = device.getAddress();
-        Log.d(LOG_TAG, "connectToDevice(): " + address);
-
-        final BluetoothGatt gatt;
-        try {
-            gatt = bluetoothDevice.connectGatt(appContext, false, gattCallback);
-
-            if (gatt == null) {
-                Log.e(LOG_TAG, "connectGatt() returned null for " + address);
-                handleConnectionFailure(device, "Failed to connect to " + address);
-                return;
-            }
-        } catch (SecurityException e) {
-            Log.e(LOG_TAG, "Missing BLUETOOTH_CONNECT permission when connecting to " + address, e);
-            handleConnectionFailure(device, "Missing BLUETOOTH_CONNECT permission");
-            return;
-        } catch (NullPointerException unexpected) {
-            return;
-        } catch (Exception e) {
-            Log.e(LOG_TAG, "connectToDevice() failed for " + address, e);
-            handleConnectionFailure(device, "Failed to connect to " + address + ": " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
-            return;
-        }
-
-        device.setState(BleDevice.State.CONNECTED, gatt);
+        gattClient.connect(device, bluetoothDevice);
     }
 
     private void handleConnectionFailure(@NonNull BleDevice device, @NonNull String message) {
-        device.setState(BleDevice.State.DISCONNECTED);
+        registry.getOrCreateContext(device.getAddress()).setState(BleConnectionContext.GattState.DISCONNECTED);
         listener.onScanError(message);
     }
 
@@ -378,6 +334,7 @@ public class BleController {
     };
 
 
+    // ======== Minimal BLE operation queue with per-operation timeout ========
 }
 
 
