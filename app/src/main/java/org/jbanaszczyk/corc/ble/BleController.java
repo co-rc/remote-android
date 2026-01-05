@@ -17,6 +17,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.jbanaszczyk.corc.BleConnectionListener;
 import org.jbanaszczyk.corc.ble.core.AndroidScheduler;
@@ -33,6 +34,9 @@ public class BleController {
     private static final String LOG_TAG = "CORC:BleController";
 
     private static final UUID CORC_SERVICE_UUID = UUID.fromString("B13A1000-9F2A-4F3B-9C8E-A7D4E3C8B125");
+
+    private static final UUID CMD_CHAR_UUID = UUID.fromString("B13A1001-9F2A-4F3B-9C8E-A7D4E3C8B125");
+    private static final UUID RSP_CHAR_UUID = UUID.fromString("B13A1002-9F2A-4F3B-9C8E-A7D4E3C8B125");
 
     private final Context appContext;
     private final BleConnectionListener listener;
@@ -77,20 +81,33 @@ public class BleController {
     }
 
     // ---- High level GATT convenience (delegates to queue) ----
-    public boolean readCharacteristic(@NonNull BleDevice device, @NonNull UUID characteristicUuid) {
-        return gattClient.enqueue(device, BleOperation.read(characteristicUuid));
+    public CompletableFuture<byte[]> readCharacteristic(@NonNull BleDevice device, @NonNull UUID characteristicUuid) {
+        var future = gattClient.enqueue(device, BleOperation.read(characteristicUuid));
+        return future != null ? future : CompletableFuture.failedFuture(new RuntimeException("GATT not ready"));
     }
 
-    public boolean writeCharacteristic(@NonNull BleDevice device, @NonNull UUID characteristicUuid, @NonNull byte[] payload) {
-        return gattClient.enqueue(device, BleOperation.write(characteristicUuid, payload));
+    public CompletableFuture<Void> writeCharacteristic(@NonNull BleDevice device, @NonNull UUID characteristicUuid, @NonNull byte[] payload) {
+        var future = gattClient.enqueue(device, BleOperation.write(characteristicUuid, payload));
+        return future != null ? future : CompletableFuture.failedFuture(new RuntimeException("GATT not ready"));
     }
 
-    public boolean enableNotifications(@NonNull BleDevice device, @NonNull UUID characteristicUuid) {
-        return gattClient.enqueue(device, BleOperation.enableNotify(characteristicUuid));
+    public CompletableFuture<Void> enableNotifications(@NonNull BleDevice device, @NonNull UUID characteristicUuid) {
+        var future = gattClient.enqueue(device, BleOperation.enableNotify(characteristicUuid));
+        return future != null ? future : CompletableFuture.failedFuture(new RuntimeException("GATT not ready"));
     }
 
-    public boolean disableNotifications(@NonNull BleDevice device, @NonNull UUID characteristicUuid) {
-        return gattClient.enqueue(device, BleOperation.disableNotify(characteristicUuid));
+    public CompletableFuture<Void> disableNotifications(@NonNull BleDevice device, @NonNull UUID characteristicUuid) {
+        var future = gattClient.enqueue(device, BleOperation.disableNotify(characteristicUuid));
+        return future != null ? future : CompletableFuture.failedFuture(new RuntimeException("GATT not ready"));
+    }
+
+    public CompletableFuture<Integer> requestMtu(@NonNull BleDevice device, int mtu) {
+        var future = gattClient.enqueue(device, BleOperation.requestMtu(mtu));
+        return future != null ? future : CompletableFuture.failedFuture(new RuntimeException("GATT not ready"));
+    }
+
+    public CompletableFuture<byte[]> sendCommand(@NonNull BleDevice device, byte opcode, byte[] payload) {
+        return gattClient.sendCommand(device, CMD_CHAR_UUID, RSP_CHAR_UUID, opcode, payload);
     }
 
     public void initialize() {

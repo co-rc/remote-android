@@ -75,7 +75,7 @@ public final class BleOperation<T> {
     }
 
     @SuppressWarnings("unchecked")
-    public void complete(Object result) {
+    public void complete(@Nullable Object result) {
         try {
             future.complete((T) result);
         } catch (ClassCastException e) {

@@ -1,27 +1,28 @@
 package org.jbanaszczyk.corc.ble.core;
 
 import android.bluetooth.BluetoothGatt;
+import androidx.annotation.Nullable;
+
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Logger;
 
 /**
  * Single-threaded BLE operation queue with per-operation timeout.
  */
 public final class OperationQueue {
-    private static final Logger LOGGER = Logger.getLogger("CORC:OpQueue");
     public static final int QUEUE_CAPACITY = 64;
-
-    public interface TimeoutProvider { long get(); }
-
+    private static final Logger LOGGER = Logger.getLogger("CORC:OpQueue");
     private final Queue<BleOperation<?>> queue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
     private final AtomicBoolean inProgress = new AtomicBoolean(false);
     private final Scheduler scheduler;
     private final TimeoutProvider timeoutProvider;
+    private final AtomicReference<BleOperation<?>> currentOperation = new AtomicReference<>();
     private OperationExecutor defaultExecutor;
     private Runnable timeoutTask;
-    private BleOperation<?> currentOperation;
 
     public OperationQueue(Scheduler scheduler, TimeoutProvider timeoutProvider) {
         this.scheduler = scheduler;
@@ -46,19 +47,19 @@ public final class OperationQueue {
         tryExecuteNextInternal(gatt, null);
     }
 
-    public void onOperationFinished(Object result) {
-        if (currentOperation != null) {
-            currentOperation.complete(result);
-            currentOperation = null;
+    public void onOperationFinished(@Nullable Object result) {
+        BleOperation<?> op = currentOperation.getAndSet(null);
+        if (op != null) {
+            op.complete(result);
         }
         inProgress.set(false);
         cancelTimeout();
     }
 
     public void onOperationFailed(Throwable throwable) {
-        if (currentOperation != null) {
-            currentOperation.completeExceptionally(throwable);
-            currentOperation = null;
+        BleOperation<?> op = currentOperation.getAndSet(null);
+        if (op != null) {
+            op.completeExceptionally(throwable);
         }
         inProgress.set(false);
         cancelTimeout();
@@ -67,23 +68,33 @@ public final class OperationQueue {
     public void clear() {
         queue.forEach(op -> op.completeExceptionally(new RuntimeException("Queue cleared")));
         queue.clear();
-        if (currentOperation != null) {
-            currentOperation.completeExceptionally(new RuntimeException("Queue cleared"));
-            currentOperation = null;
+        BleOperation<?> op = currentOperation.getAndSet(null);
+        if (op != null) {
+            op.completeExceptionally(new RuntimeException("Queue cleared"));
         }
         inProgress.set(false);
         cancelTimeout();
     }
 
     private void tryExecuteNextInternal(BluetoothGatt gatt, OperationExecutor explicitExecutor) {
-        if (gatt == null) return;
-        if (inProgress.get()) return;
+        if (gatt == null) {
+            return;
+        }
+        if (inProgress.get()) {
+            return;
+        }
         // Determine executor first; if none, do not disturb queue/inProgress
-        OperationExecutor executor = explicitExecutor != null ? explicitExecutor : defaultExecutor;
-        if (executor == null) return;
+        OperationExecutor executor = explicitExecutor != null
+                ? explicitExecutor
+                : defaultExecutor;
+        if (executor == null) {
+            return;
+        }
         BleOperation<?> next = queue.poll();
-        if (next == null) return;
-        currentOperation = next;
+        if (next == null) {
+            return;
+        }
+        currentOperation.set(next);
         inProgress.set(true);
         scheduleTimeout(gatt);
         scheduler.post(() -> executor.execute(gatt, next));
@@ -95,9 +106,9 @@ public final class OperationQueue {
         timeoutTask = () -> {
             try {
                 LOGGER.severe("GATT operation timed out after " + timeoutMs + " ms");
-                if (currentOperation != null) {
-                    currentOperation.completeExceptionally(new RuntimeException("GATT operation timed out"));
-                    currentOperation = null;
+                BleOperation<?> op = currentOperation.getAndSet(null);
+                if (op != null) {
+                    op.completeExceptionally(new RuntimeException("GATT operation timed out"));
                 }
                 try {
                     gatt.disconnect();
@@ -118,5 +129,9 @@ public final class OperationQueue {
             scheduler.removeCallbacks(timeoutTask);
             timeoutTask = null;
         }
+    }
+
+    public interface TimeoutProvider {
+        long get();
     }
 }

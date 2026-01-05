@@ -18,11 +18,25 @@ public final class StandardGattOperationExecutor implements OperationExecutor {
 
     @SuppressLint("MissingPermission")
     @Override
-    public void execute(@NonNull BluetoothGatt gatt, @NonNull BleOperation operation) {
+    public void execute(@NonNull BluetoothGatt gatt, @NonNull BleOperation<?> operation) {
+        if (operation.getType() == BleOperation.BleOperationType.REQUEST_MTU) {
+            try {
+                var mtu = operation.getMtu();
+                if (mtu != null) {
+                    gatt.requestMtu(mtu);
+                }
+            } catch (SecurityException se) {
+                Log.e(LOG_TAG, "Missing BLUETOOTH_CONNECT permission during requestMtu", se);
+            } catch (Exception e) {
+                Log.e(LOG_TAG, "requestMtu failed: " + e.getMessage(), e);
+            }
+            return;
+        }
+
         BluetoothGattCharacteristic characteristic = findCharacteristic(gatt, operation.getCharacteristicUuid());
         if (characteristic == null) {
             Log.w(LOG_TAG, "Characteristic not found: " + operation.getCharacteristicUuid());
-            // Let OperationQueue timeout handle cleanup if nothing happens
+            // OperationQueue timeout will handle it if we don't finish
             return;
         }
 
@@ -35,6 +49,8 @@ public final class StandardGattOperationExecutor implements OperationExecutor {
                         BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
                 case ENABLE_NOTIFY -> enableNotify(gatt, characteristic);
                 case DISABLE_NOTIFY -> disableNotify(gatt, characteristic);
+                default -> {
+                }
             }
         } catch (SecurityException se) {
             Log.e(LOG_TAG, "Missing BLUETOOTH_CONNECT permission during execute", se);

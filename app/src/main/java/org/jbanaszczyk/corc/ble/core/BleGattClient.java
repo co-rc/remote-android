@@ -17,7 +17,10 @@ import org.jbanaszczyk.corc.ble.BleDeviceAddress;
 import org.jbanaszczyk.corc.ble.BleDeviceRegistry;
 import org.jbanaszczyk.corc.ble.BleConnectionContext;
 import org.jbanaszczyk.corc.ble.repo.BleDeviceRepository;
+import org.jbanaszczyk.corc.ble.core.protocol.BleCommandResponseManager;
 
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 /**
@@ -26,22 +29,13 @@ import java.util.stream.Collectors;
 public final class BleGattClient {
     private static final String LOG_TAG = "CORC:BleGattClient";
 
-    private enum GattState { // kept for backward compatibility of API; delegates to BleConnectionContext
-        DISCONNECTED,
-        CONNECTING,
-        SERVICES_DISCOVERING,
-        READY,
-        DISCONNECTING
-    }
-
     private final Context appContext;
     private final BleDeviceRegistry registry;
     private final BleDeviceRepository deviceRepository;
     private final BleConnectionListener listener;
     private final OperationQueue operationQueue;
     private final OperationExecutor operationExecutor;
-
-    private volatile GattState state = GattState.DISCONNECTED;
+    private final BleCommandResponseManager commandResponseManager = new BleCommandResponseManager();
 
     public BleGattClient(@NonNull Context context,
                          @NonNull BleDeviceRegistry registry,
@@ -59,21 +53,47 @@ public final class BleGattClient {
         this.operationQueue.setExecutor(operationExecutor);
     }
 
-    public GattState getState() {
-        return state;
+    /**
+     * Enqueues a BLE operation for the provided device. Returns null if GATT is not READY
+     * or device has no active GATT instance.
+     */
+    public <T> CompletableFuture<T> enqueue(@NonNull BleDevice device, @NonNull BleOperation<T> operation) {
+        var ctx = registry.getOrCreateContext(device.getAddress());
+        BluetoothGatt gatt = ctx.getGatt();
+        if (gatt == null) return null;
+        if (ctx.getState() != BleConnectionContext.GattState.READY) return null;
+        
+        CompletableFuture<T> future = operationQueue.enqueue(operation, gatt, operationExecutor);
+
+        return future;
     }
 
     /**
-     * Enqueues a BLE operation for the provided device. Returns false if GATT is not READY
-     * or device has no active GATT instance.
+     * Sends command; awaits response via command manager
      */
-    public boolean enqueue(@NonNull BleDevice device, @NonNull BleOperation operation) {
-        var ctx = registry.getOrCreateContext(device.getAddress());
-        BluetoothGatt gatt = ctx.getGatt();
-        if (gatt == null) return false;
-        if (ctx.getState() != BleConnectionContext.GattState.READY) return false;
-        operationQueue.enqueue(operation, gatt, operationExecutor);
-        return true;
+    public CompletableFuture<byte[]> sendCommand(@NonNull BleDevice device, UUID cmdUuid, UUID rspUuid, byte opcode, byte[] payload) {
+        var request = commandResponseManager.createRequest(opcode, payload);
+        CompletableFuture<byte[]> responseFuture = new CompletableFuture<>();
+        
+        // 1. Enqueue Write to CMD characteristic
+        var writeOp = BleOperation.write(cmdUuid, request.data());
+        var writeFuture = enqueue(device, writeOp);
+        
+        if (writeFuture == null) {
+            return CompletableFuture.failedFuture(new RuntimeException("GATT not ready"));
+        }
+
+        writeFuture.handle((result, throwable) -> {
+            if (throwable != null) {
+                responseFuture.completeExceptionally(throwable);
+            } else {
+                // Write succeeded at transport level, now wait for notification
+                commandResponseManager.setPendingResponse(request.requestId(), opcode, responseFuture);
+            }
+            return null;
+        });
+
+        return responseFuture;
     }
 
     @SuppressLint("MissingPermission")
@@ -81,6 +101,7 @@ public final class BleGattClient {
         final BleDeviceAddress address = device.getAddress();
         Log.d(LOG_TAG, "connect(): " + address);
 
+        // Connects to device; handles errors; updates connection context
         try {
             BluetoothGatt gatt = bluetoothDevice.connectGatt(appContext, false, gattCallback, BluetoothDevice.TRANSPORT_LE);
             if (gatt == null) {
@@ -91,7 +112,6 @@ public final class BleGattClient {
             var ctx = registry.getOrCreateContext(address);
             ctx.setGatt(gatt);
             ctx.setState(BleConnectionContext.GattState.CONNECTING);
-            state = GattState.CONNECTING; // mirror
         } catch (SecurityException e) {
             Log.e(LOG_TAG, "Missing BLUETOOTH_CONNECT permission when connecting to " + address, e);
             listener.onScanError("Missing BLUETOOTH_CONNECT permission");
@@ -136,7 +156,6 @@ public final class BleGattClient {
             deviceRepository.save(device);
             var ctx = registry.getOrCreateContext(address);
             ctx.setState(BleConnectionContext.GattState.READY);
-            state = GattState.READY;
             operationQueue.tryExecuteNext(ctx.getGatt());
             listener.onDeviceReady(device);
         }
@@ -153,14 +172,12 @@ public final class BleGattClient {
                 case BluetoothProfile.STATE_CONNECTED -> {
                     ctx.setGatt(gatt);
                     ctx.setState(BleConnectionContext.GattState.SERVICES_DISCOVERING);
-                    state = GattState.SERVICES_DISCOVERING;
                     listener.onConnectionStateChanged(device, true);
                     gatt.discoverServices();
                 }
                 case BluetoothProfile.STATE_DISCONNECTED -> {
                     ctx.setState(BleConnectionContext.GattState.DISCONNECTED);
                     safeCloseGatt(gatt);
-                    state = GattState.DISCONNECTED;
                     listener.onConnectionStateChanged(device, false);
                 }
                 case BluetoothProfile.STATE_DISCONNECTING -> Log.d(LOG_TAG, "onConnectionStateChange(): STATE_DISCONNECTING");
@@ -173,21 +190,33 @@ public final class BleGattClient {
                                          @NonNull BluetoothGattCharacteristic characteristic,
                                          @NonNull byte[] value,
                                          int status) {
-            operationQueue.onOperationFinished();
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                operationQueue.onOperationFinished(value);
+            } else {
+                operationQueue.onOperationFailed(new RuntimeException("GATT Read failed with status: " + status));
+            }
         }
 
         @Override
         public void onCharacteristicWrite(@NonNull BluetoothGatt gatt,
                                           @NonNull BluetoothGattCharacteristic characteristic,
                                           int status) {
-            operationQueue.onOperationFinished();
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                operationQueue.onOperationFinished(null);
+            } else {
+                operationQueue.onOperationFailed(new RuntimeException("GATT Write failed with status: " + status));
+            }
         }
 
         @Override
         public void onDescriptorWrite(@NonNull BluetoothGatt gatt,
                                       @NonNull BluetoothGattDescriptor descriptor,
                                       int status) {
-            operationQueue.onOperationFinished();
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                operationQueue.onOperationFinished(null);
+            } else {
+                operationQueue.onOperationFailed(new RuntimeException("GATT Descriptor Write failed with status: " + status));
+            }
         }
 
         @Override
@@ -196,8 +225,17 @@ public final class BleGattClient {
             var ctx = registry.getOrCreateContext(address);
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 ctx.setMtu(mtu);
+                operationQueue.onOperationFinished(mtu);
+            } else {
+                operationQueue.onOperationFailed(new RuntimeException("GATT MTU change failed with status: " + status));
             }
-            operationQueue.onOperationFinished();
+        }
+
+        @Override
+        public void onCharacteristicChanged(@NonNull BluetoothGatt gatt,
+                                            @NonNull BluetoothGattCharacteristic characteristic,
+                                            @NonNull byte[] value) {
+            commandResponseManager.handleNotification(value);
         }
     };
 }

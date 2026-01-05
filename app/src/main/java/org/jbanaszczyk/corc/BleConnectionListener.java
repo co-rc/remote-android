@@ -3,6 +3,7 @@ package org.jbanaszczyk.corc;
 import androidx.annotation.NonNull;
 import org.jbanaszczyk.corc.ble.BleDevice;
 
+
 @SuppressWarnings("EmptyMethod")
 public interface BleConnectionListener {
 

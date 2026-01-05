@@ -5,7 +5,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 
 public interface OperationExecutor {
-    void execute(@NonNull BluetoothGatt gatt, @NonNull BleOperation operation);
+    void execute(@NonNull BluetoothGatt gatt, @NonNull BleOperation<?> operation);
 
     static OperationExecutor logOnly() {
         return (g, op) -> Log.w("CORC:BleController",
