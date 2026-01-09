@@ -20,15 +20,13 @@ public final class StandardGattOperationExecutor implements OperationExecutor {
     @Override
     public void execute(@NonNull BluetoothGatt gatt, @NonNull BleOperation<?> operation) {
         if (operation.getType() == BleOperation.BleOperationType.REQUEST_MTU) {
-            try {
-                var mtu = operation.getMtu();
-                if (mtu != null) {
-                    gatt.requestMtu(mtu);
+            var mtu = operation.getMtu();
+            if (mtu != null) {
+                Log.d(LOG_TAG, "requestMtu(" + mtu + ")");
+                boolean ok = gatt.requestMtu(mtu);
+                if (!ok) {
+                    throw new RuntimeException("gatt.requestMtu() returned false");
                 }
-            } catch (SecurityException se) {
-                Log.e(LOG_TAG, "Missing BLUETOOTH_CONNECT permission during requestMtu", se);
-            } catch (Exception e) {
-                Log.e(LOG_TAG, "requestMtu failed: " + e.getMessage(), e);
             }
             return;
         }
@@ -41,21 +39,40 @@ public final class StandardGattOperationExecutor implements OperationExecutor {
         }
 
         try {
+            boolean ok = false;
             switch (operation.getType()) {
-                case READ -> gatt.readCharacteristic(characteristic);
-                case WRITE -> gatt.writeCharacteristic(
-                        characteristic,
-                        operation.getPayload(),
-                        BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
-                case ENABLE_NOTIFY -> enableNotify(gatt, characteristic);
-                case DISABLE_NOTIFY -> disableNotify(gatt, characteristic);
+                case READ -> ok = gatt.readCharacteristic(characteristic);
+                case WRITE -> {
+                    // Check if we use the new API or old. 
+                    // Based on previous code, we used the 3-arg version.
+                    // If the compiler complained about 'int' vs 'boolean' for readCharacteristic, 
+                    // let's see what happens here.
+                    int status = gatt.writeCharacteristic(
+                            characteristic,
+                            operation.getPayload(),
+                            BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+                    ok = (status == BluetoothGatt.GATT_SUCCESS);
+                }
+                case ENABLE_NOTIFY -> {
+                    enableNotify(gatt, characteristic);
+                    ok = true;
+                }
+                case DISABLE_NOTIFY -> {
+                    disableNotify(gatt, characteristic);
+                    ok = true;
+                }
                 default -> {
                 }
             }
+            if (!ok) {
+                throw new RuntimeException("GATT operation " + operation.getType() + " failed");
+            }
         } catch (SecurityException se) {
             Log.e(LOG_TAG, "Missing BLUETOOTH_CONNECT permission during execute", se);
+            throw se;
         } catch (Exception e) {
             Log.e(LOG_TAG, "GATT execute failed: " + e.getMessage(), e);
+            throw e;
         }
     }
 

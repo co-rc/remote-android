@@ -19,9 +19,10 @@ public final class BleCommandResponseManager {
     private static final int MAGIC_SIZE = Short.BYTES;
     private static final int REQUEST_ID_SIZE = Byte.BYTES;
     private static final int OPCODE_SIZE = Byte.BYTES;
+    private static final int RESULT_VALUE_SIZE = Byte.BYTES;
     private static final int PAYLOAD_LEN_SIZE = Byte.BYTES;
     public static final int PAYLOAD_HEADER_SIZE = MAGIC_SIZE + REQUEST_ID_SIZE + OPCODE_SIZE + PAYLOAD_LEN_SIZE;
-    private static final int RESULT_VALUE_SIZE = Byte.BYTES;
+    public static final int MAX_PAYLOAD_SIZE = (1 << (Byte.SIZE * PAYLOAD_LEN_SIZE)) - 1;
     private static final int RESPONSE_HEADER_SIZE = PAYLOAD_HEADER_SIZE + RESULT_VALUE_SIZE;
     private final AtomicInteger requestIdCounter = new AtomicInteger(0);
     private final Utils.ByteSequence byteSequence = new Utils.ByteSequence(requestIdCounter::getAndIncrement);

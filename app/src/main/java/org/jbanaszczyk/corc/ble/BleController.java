@@ -82,27 +82,27 @@ public class BleController {
 
     // ---- High level GATT convenience (delegates to queue) ----
     public CompletableFuture<byte[]> readCharacteristic(@NonNull BleDevice device, @NonNull UUID characteristicUuid) {
-        var future = gattClient.enqueue(device, BleOperation.read(characteristicUuid));
+        var future = gattClient.enqueue(device, BleOperation.read(device.getAddress(), characteristicUuid));
         return future != null ? future : CompletableFuture.failedFuture(new RuntimeException("GATT not ready"));
     }
 
     public CompletableFuture<Void> writeCharacteristic(@NonNull BleDevice device, @NonNull UUID characteristicUuid, @NonNull byte[] payload) {
-        var future = gattClient.enqueue(device, BleOperation.write(characteristicUuid, payload));
+        var future = gattClient.enqueue(device, BleOperation.write(device.getAddress(), characteristicUuid, payload));
         return future != null ? future : CompletableFuture.failedFuture(new RuntimeException("GATT not ready"));
     }
 
     public CompletableFuture<Void> enableNotifications(@NonNull BleDevice device, @NonNull UUID characteristicUuid) {
-        var future = gattClient.enqueue(device, BleOperation.enableNotify(characteristicUuid));
+        var future = gattClient.enqueue(device, BleOperation.enableNotify(device.getAddress(), characteristicUuid));
         return future != null ? future : CompletableFuture.failedFuture(new RuntimeException("GATT not ready"));
     }
 
     public CompletableFuture<Void> disableNotifications(@NonNull BleDevice device, @NonNull UUID characteristicUuid) {
-        var future = gattClient.enqueue(device, BleOperation.disableNotify(characteristicUuid));
+        var future = gattClient.enqueue(device, BleOperation.disableNotify(device.getAddress(), characteristicUuid));
         return future != null ? future : CompletableFuture.failedFuture(new RuntimeException("GATT not ready"));
     }
 
     public CompletableFuture<Integer> requestMtu(@NonNull BleDevice device, int mtu) {
-        var future = gattClient.enqueue(device, BleOperation.requestMtu(mtu));
+        var future = gattClient.enqueue(device, BleOperation.requestMtu(device.getAddress(), mtu));
         return future != null ? future : CompletableFuture.failedFuture(new RuntimeException("GATT not ready"));
     }
 

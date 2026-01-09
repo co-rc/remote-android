@@ -28,7 +28,6 @@ public final class BleDeviceRegistry {
             if (address.isEmpty()) continue;
 
             result.add(ensure(address)
-                    .setServices(stored.getServices())
                     .setConfiguration(stored.getConfiguration()));
         }
         return result;
@@ -40,10 +39,10 @@ public final class BleDeviceRegistry {
         if (existing != null) {
             return existing;
         }
-        BleDevice created = new BleDevice(new BleDevicePersistent(address));
+        BleConnectionContext ctx = contexts.computeIfAbsent(address, k -> new BleConnectionContext());
+        BleDevice created = new BleDevice(new BleDevicePersistent(address), ctx);
         BleDevice race = devices.putIfAbsent(address, created);
-        // Ensure context exists as well
-        contexts.putIfAbsent(address, new BleConnectionContext());
+
         return race != null ? race : created;
     }
 

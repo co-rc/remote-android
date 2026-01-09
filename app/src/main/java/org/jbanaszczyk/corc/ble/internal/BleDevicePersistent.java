@@ -5,16 +5,11 @@ import androidx.annotation.Nullable;
 import androidx.annotation.RestrictTo;
 import androidx.room.*;
 import org.jbanaszczyk.corc.ble.BleDeviceAddress;
-import org.jbanaszczyk.corc.ble.BleTypeConverters;
-
-import java.util.Set;
-import java.util.UUID;
 
 import static androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP;
 
 @RestrictTo(LIBRARY_GROUP)
 @Entity(tableName = "ble_devices")
-@TypeConverters({BleTypeConverters.class})
 public class BleDevicePersistent {
 
     @PrimaryKey
@@ -22,27 +17,21 @@ public class BleDevicePersistent {
     @ColumnInfo(name = "address")
     private final BleDeviceAddress address;
 
-    @ColumnInfo(name = "services")
-    @NonNull
-    private Set<UUID> services;
-
     @ColumnInfo(name = "configuration", defaultValue = "")
     @NonNull
     private String configuration;
 
     public BleDevicePersistent(
             @Nullable BleDeviceAddress address,
-            @Nullable Set<UUID> services,
             @Nullable String configuration
     ) {
         this.address = normalizeAddress(address);
-        this.services = normalizeServices(services);
         this.configuration = normalizeConfiguration(configuration);
     }
 
     @Ignore
     public BleDevicePersistent(@Nullable BleDeviceAddress address) {
-        this(address, null, null);
+        this(address, null);
     }
 
     @NonNull
@@ -51,10 +40,8 @@ public class BleDevicePersistent {
     }
 
     @NonNull
-    private static Set<UUID> normalizeServices(@Nullable Set<UUID> services) {
-        return services == null
-                ? Set.of()
-                : Set.copyOf(services);
+    public BleDeviceAddress getAddress() {
+        return address;
     }
 
     @NonNull
@@ -62,20 +49,6 @@ public class BleDevicePersistent {
         return configuration == null
                 ? ""
                 : configuration;
-    }
-
-    @NonNull
-    public BleDeviceAddress getAddress() {
-        return address;
-    }
-
-    @NonNull
-    public Set<UUID> getServices() {
-        return services;
-    }
-
-    public void setServices(@Nullable Set<UUID> services) {
-        this.services = normalizeServices(services);
     }
 
     @NonNull

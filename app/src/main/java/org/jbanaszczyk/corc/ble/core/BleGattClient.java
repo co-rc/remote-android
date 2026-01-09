@@ -28,6 +28,11 @@ import java.util.stream.Collectors;
  */
 public final class BleGattClient {
     private static final String LOG_TAG = "CORC:BleGattClient";
+    private static final int GATT_WRITE_OVERHEAD = 3;
+    private static final int DEFAULT_MTU =
+            BleCommandResponseManager.MAX_PAYLOAD_SIZE
+            + BleCommandResponseManager.PAYLOAD_HEADER_SIZE
+            + GATT_WRITE_OVERHEAD;
 
     private final Context appContext;
     private final BleDeviceRegistry registry;
@@ -62,10 +67,8 @@ public final class BleGattClient {
         BluetoothGatt gatt = ctx.getGatt();
         if (gatt == null) return null;
         if (ctx.getState() != BleConnectionContext.GattState.READY) return null;
-        
-        CompletableFuture<T> future = operationQueue.enqueue(operation, gatt, operationExecutor);
 
-        return future;
+        return operationQueue.enqueue(operation, gatt, operationExecutor);
     }
 
     /**
@@ -76,7 +79,7 @@ public final class BleGattClient {
         CompletableFuture<byte[]> responseFuture = new CompletableFuture<>();
         
         // 1. Enqueue Write to CMD characteristic
-        var writeOp = BleOperation.write(cmdUuid, request.data());
+        var writeOp = BleOperation.write(device.getAddress(), cmdUuid, request.data());
         var writeFuture = enqueue(device, writeOp);
         
         if (writeFuture == null) {
@@ -125,12 +128,15 @@ public final class BleGattClient {
 
     @SuppressLint("MissingPermission")
     private void safeCloseGatt(@NonNull BluetoothGatt gatt) {
+        var address = BleDeviceAddress.getAddressFromGatt(gatt);
         try {
             gatt.close();
         } catch (Exception e) {
             Log.e(LOG_TAG, "Error closing GATT", e);
         } finally {
-            operationQueue.clear();
+            if (!address.isEmpty()) {
+                operationQueue.clear(address);
+            }
         }
     }
 
@@ -173,7 +179,13 @@ public final class BleGattClient {
                     ctx.setGatt(gatt);
                     ctx.setState(BleConnectionContext.GattState.SERVICES_DISCOVERING);
                     listener.onConnectionStateChanged(device, true);
-                    gatt.discoverServices();
+                    operationQueue.enqueue(BleOperation.requestMtu(address, DEFAULT_MTU), gatt, operationExecutor)
+                            .thenRun(gatt::discoverServices)
+                            .exceptionally(t -> {
+                                Log.e(LOG_TAG, "MTU request failed, proceeding with service discovery", t);
+                                gatt.discoverServices();
+                                return null;
+                            });
                 }
                 case BluetoothProfile.STATE_DISCONNECTED -> {
                     ctx.setState(BleConnectionContext.GattState.DISCONNECTED);
@@ -222,6 +234,7 @@ public final class BleGattClient {
         @Override
         public void onMtuChanged(@NonNull BluetoothGatt gatt, int mtu, int status) {
             var address = BleDeviceAddress.getAddressFromGatt(gatt);
+            Log.d(LOG_TAG, "onMtuChanged(): address=" + address + ", mtu=" + mtu + ", status=" + status);
             var ctx = registry.getOrCreateContext(address);
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 ctx.setMtu(mtu);

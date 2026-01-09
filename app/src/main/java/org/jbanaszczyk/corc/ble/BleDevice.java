@@ -8,12 +8,14 @@ import java.util.Set;
 import java.util.UUID;
 
 public class BleDevice {
-
     @NonNull
     private final BleDevicePersistent persistent;
+    @NonNull
+    private final BleConnectionContext context;
 
-    public BleDevice(@NonNull BleDevicePersistent persistent) {
+    public BleDevice(@NonNull BleDevicePersistent persistent, @NonNull BleConnectionContext context) {
         this.persistent = persistent;
+        this.context = context;
     }
 
     @NonNull
@@ -33,11 +35,11 @@ public class BleDevice {
 
     @NonNull
     public Set<UUID> getServices() {
-        return persistent.getServices();
+        return context.getServices();
     }
 
     public BleDevice setServices(@Nullable Set<UUID> services) {
-        persistent.setServices(services);
+        context.setServices(services);
         return this;
     }
 }

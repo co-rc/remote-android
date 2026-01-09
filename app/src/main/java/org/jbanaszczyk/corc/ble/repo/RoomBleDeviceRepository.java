@@ -3,6 +3,7 @@ package org.jbanaszczyk.corc.ble.repo;
 import android.content.Context;
 import android.util.Log;
 import androidx.annotation.NonNull;
+import org.jbanaszczyk.corc.ble.BleConnectionContext;
 import org.jbanaszczyk.corc.ble.BleDevice;
 import org.jbanaszczyk.corc.ble.internal.BleDevicePersistent;
 import org.jbanaszczyk.corc.db.CorcDatabase;
@@ -90,13 +91,12 @@ public final class RoomBleDeviceRepository implements BleDeviceRepository {
     private static BleDevicePersistent toEntity(@NonNull BleDevice device) {
         return new BleDevicePersistent(
                 device.getAddress(),
-                device.getServices(),
                 device.getConfiguration()
         );
     }
 
     @NonNull
     private static BleDevice fromEntity(@NonNull BleDevicePersistent entity) {
-        return new BleDevice(entity);
+        return new BleDevice(entity, new BleConnectionContext());
     }
 }

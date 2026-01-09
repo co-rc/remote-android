@@ -7,8 +7,10 @@ import androidx.annotation.NonNull;
 import androidx.room.Database;
 import androidx.room.Room;
 import androidx.room.RoomDatabase;
+import androidx.room.TypeConverters;
 import androidx.sqlite.db.SupportSQLiteDatabase;
 
+import org.jbanaszczyk.corc.ble.BleTypeConverters;
 import org.jbanaszczyk.corc.ble.internal.BleDevicePersistent;
 
 @Database(
@@ -19,6 +21,7 @@ import org.jbanaszczyk.corc.ble.internal.BleDevicePersistent;
         version = 1,
         exportSchema = false
 )
+@TypeConverters({BleTypeConverters.class})
 public abstract class CorcDatabase extends RoomDatabase {
 
     public static final int CURRENT_DB_VERSION = 1;
