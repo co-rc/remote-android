@@ -42,4 +42,13 @@ public class BleDevice {
         context.setServices(services);
         return this;
     }
+
+    public int getDataMaxLen() {
+        return context.getDataMaxLen();
+    }
+
+    @NonNull
+    public String getVersion() {
+        return context.getVersion();
+    }
 }

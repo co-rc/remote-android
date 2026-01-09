@@ -18,6 +18,7 @@ import org.jbanaszczyk.corc.ble.BleDeviceRegistry;
 import org.jbanaszczyk.corc.ble.BleConnectionContext;
 import org.jbanaszczyk.corc.ble.repo.BleDeviceRepository;
 import org.jbanaszczyk.corc.ble.core.protocol.BleCommandResponseManager;
+import org.jbanaszczyk.corc.ble.core.protocol.BleOpcode;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -28,11 +29,15 @@ import java.util.stream.Collectors;
  */
 public final class BleGattClient {
     private static final String LOG_TAG = "CORC:BleGattClient";
-    private static final int GATT_WRITE_OVERHEAD = 3;
+    public static final int GATT_WRITE_OVERHEAD = 3;
+    public static final int MIN_MTU = 23;
     private static final int DEFAULT_MTU =
             BleCommandResponseManager.MAX_PAYLOAD_SIZE
             + BleCommandResponseManager.PAYLOAD_HEADER_SIZE
             + GATT_WRITE_OVERHEAD;
+
+    private static final UUID CMD_CHAR_UUID = UUID.fromString("B13A1001-9F2A-4F3B-9C8E-A7D4E3C8B125");
+    private static final UUID RSP_CHAR_UUID = UUID.fromString("B13A1002-9F2A-4F3B-9C8E-A7D4E3C8B125");
 
     private final Context appContext;
     private final BleDeviceRegistry registry;
@@ -163,6 +168,29 @@ public final class BleGattClient {
             var ctx = registry.getOrCreateContext(address);
             ctx.setState(BleConnectionContext.GattState.READY);
             operationQueue.tryExecuteNext(ctx.getGatt());
+
+            enqueue(device, BleOperation.enableNotify(address, RSP_CHAR_UUID))
+                    .thenCompose(v -> sendCommand(device, CMD_CHAR_UUID, RSP_CHAR_UUID, BleOpcode.VERSION, null))
+                    .thenAccept(payload -> {
+                        if (payload.length >= 3) {
+                            String ver = payload[0] + "." + payload[1] + "." + payload[2];
+                            ctx.setVersion(ver);
+                            Log.i(LOG_TAG, "Peripheral Version: " + ver);
+                        }
+                    })
+                    .thenCompose(v -> sendCommand(device, CMD_CHAR_UUID, RSP_CHAR_UUID, BleOpcode.GET_DATA_MAX_LEN, null))
+                    .thenAccept(payload -> {
+                        if (payload.length >= 1) {
+                            int maxLen = Byte.toUnsignedInt(payload[0]);
+                            ctx.setDataMaxLen(maxLen);
+                            Log.i(LOG_TAG, "Data Max Len: " + maxLen);
+                        }
+                    })
+                    .exceptionally(t -> {
+                        Log.e(LOG_TAG, "Failed to query device info", t);
+                        return null;
+                    });
+
             listener.onDeviceReady(device);
         }
 

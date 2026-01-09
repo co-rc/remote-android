@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Manages the CMD/RSP protocol framing and request correlation.
  */
 public final class BleCommandResponseManager {
-    public static final int PROTOCOL_MAGIC = 0xC07C;
+    public static final int PROTOCOL_MAGIC = 0x2CC0; // Little endian: 0xC02C looks like CORC
     private static final String LOG_TAG = "CORC:BleCommandRespMgr";
     private static final ByteOrder PROTOCOL_BYTE_ORDER = ByteOrder.LITTLE_ENDIAN;
 
